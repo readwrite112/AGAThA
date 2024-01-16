@@ -1,0 +1,13 @@
+*/lib/*
+*/include/*
+*/obj/*
+.vscode/*
+*.log
+
+*.o
+*.cuo
+*.cppo
+*.out
+*.txt
+
+*.json
