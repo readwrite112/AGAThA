@@ -77,19 +77,9 @@
 
 
 
-
-
-/* typename meaning : 
-    - T is the algorithm type (LOCAL, MICROLOCAL)
-    - S is WITH_ or WIHTOUT_START
-    - B is for computing the Second Best Score. Its values are on enum FALSE(0)/TRUE(1).
-    (sidenote: it's based on an enum instead of a bool in order to generalize its type from its Int value, with Int2Type meta-programming-template)
-*/
-template <typename T, typename S, typename B>
 __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, gasal_res_t *device_res, gasal_res_t *device_res_second, uint4 *packed_tb_matrices, int n_tasks, uint32_t max_query_len, short2 *global_inter_row, int stretch, int zdrop, int W)
 {
     const uint32_t tid = (blockIdx.x * blockDim.x) + threadIdx.x;//thread ID
-	//if (tid >= n_tasks) return;
 
 	int32_t i, j, k, m, l, y, u;
 	int32_t e;
@@ -108,7 +98,6 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 	short2 initHD = make_short2(MINUS_INF2, MINUS_INF2);
 	
 	//-----arrays for saving intermediate values------
-	//short2 global[MAX_QUERY_LEN];
 	int32_t h[9];
 	int32_t f[9];
 	int32_t p[9];
@@ -124,10 +113,8 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 	int warp_num = tid / warp_len;
 	int warp_per_kernel = (gridDim.x * blockDim.x) / warp_len; // number of warps. assume number of threads % warp_len == 0
 	int job_per_warp = n_tasks % warp_per_kernel ? (n_tasks / warp_per_kernel + 1) : n_tasks / warp_per_kernel ;
-	//int warp_per_block = blockDim.x / warp_len; // number of warps in a block 
 	
 	// shared memory for intermediate values
-	//extern __shared__ short2 inter_row[];	//TODO: could use global mem instead
 	extern __shared__ int32_t shared_maxHH[];
 	int job_per_query = max_query_len % warp_len ? (max_query_len / warp_len + 1) : max_query_len / warp_len;
 
@@ -138,15 +125,13 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 	int32_t packed_target_batch_idx, packed_query_batch_idx, read_len, ref_len, query_batch_regs, target_batch_regs;
 
 	const int packed_len = 8;
-	//const int shared_len = 32;
-	//int iter_num;
+
 
 	int band_start, band_end, completed_band, stretch_start, stretch_end;
 	int band_target, band_query;
 	int total_diags;
 	register uint32_t gpac, rpac; 
 	short2* global_inter_col = (short2*)(global_inter_row+max_query_len*(blockDim.x/8)*gridDim.x);
-	//int32_t* saved_p = (int32_t*)(global_inter_col+max_query_len*(blockDim.x/8)*gridDim.x);
 	int32_t* global_inter_col_p= (int32_t*)(global_inter_col+max_query_len*(blockDim.x/8)*gridDim.x);
 	short2* global_idx = (short2*)(global_inter_row+max_query_len*(blockDim.x/8)*gridDim.x*3);
 
@@ -178,7 +163,6 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 			if ((l) < max_query_len) {
 				k = -(_cudaGapOE + (_cudaGapExtend*(l)));
 				global_inter_row[warp_num*max_query_len + l] =  l <= W? make_short2(k, k-_cudaGapOE):initHD;	
-				//inter_row[warp_block_id*512 + l] = global_inter_row[warp_num*max_query_len + l];	
 			}
 		}
 		for (j = 0; j < job_per_query; j++) {
@@ -186,7 +170,6 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 			if ((l) < max_query_len) {
 				k = -(_cudaGapOE + (_cudaGapExtend*(l)));
 				global_inter_col[warp_num*max_query_len + l] =  l <= W? make_short2(k, k-_cudaGapOE):initHD;	
-				//inter_row[warp_block_id*512 + l] = global_inter_row[warp_num*max_query_len + l];	
 			}
 		}
 		
@@ -227,14 +210,7 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 		__syncwarp();
 
 		while (j < total_diags) {
-			// start of a new chunk diag
-			/*
-			band_start = (j*packed_len + packed_len-1+1 - W);
-			band_start = band_start > 0? (band_start>>1)/packed_len:0;
-			band_start = min(band_start, query_batch_regs-1);
-			band_end = min(((j*packed_len + packed_len-1 + W)>>1)/packed_len, target_batch_regs-1);
-			band_end = min(band_end, j);
-			*/
+
 			band_start = max(0, (j-query_batch_regs+1));
 			band_start = max(band_start, (j*packed_len + packed_len-1+1 - W)/2/packed_len);
 			band_end = min(target_batch_regs-1, j+stretch-1);
@@ -255,13 +231,6 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 				if (active) {
 					gidx = band_target << 3;
 					ridx = band_query << 3;
-					
-					//DEBUG = min(DEBUG, band_start);
-					// if the current thread is within bounds
-					// read packed bps
-
-					// read scores 
-					// TODO: edit score reading in a more efficient way 
 
 					p[1] = global_inter_col_p[warp_num*max_query_len + band_target];
 
@@ -293,19 +262,11 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 						
 						rpac = packed_query_batch[packed_query_batch_idx + band_query]; 
 						ridx = band_query << 3;
-
-						//p[1] = saved_p[warp_num*max_query_len + band_query];
-
-
 						
 						for (k = 28; k >= 0 && ridx < read_len; k -= 4) {
-							uint32_t rbase = (rpac >> k) & 15;//get a base from query_batch sequence
+							uint32_t rbase = (rpac >> k) & 15;	//get a base from query_batch sequence
 							//-----load intermediate values--------------
-							//HD = inter_row[warp_block_id*packed_warp_len + (read_iter%(2*shared_len))*packed_len + ridx];
-							//HD = global_inter_row[warp_num*max_query_len + read_iter*packed_len + ridx];
 							HD = global_inter_row[warp_num*max_query_len + ridx];
-							//HD = global_inter_row[warp_num*max_query_len + ridx];
-							//p[1] = HD.x;
 							h[0] = HD.x;
 							e = HD.y;
 							
@@ -324,13 +285,9 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 							//----------save intermediate values------------
 							HD.x = h[m-1];
 							HD.y = e;
-							//inter_row[warp_block_id*packed_warp_len + (read_iter%(2*shared_len))*packed_len + ridx] = HD;
-							//global_inter_row[warp_num*max_query_len + read_iter*packed_len + ridx] = HD;
 							global_inter_row[warp_num*max_query_len + ridx] = HD;
 							//---------------------------------------------
 
-							//TODO: remove max value calculation
-							//maxXY_x = (prev_maxHH < maxHH) ? ridx+read_iter*8 : maxXY_x;//end position on query_batch sequence corresponding to current maximum score
 							ridx++;
 							//-------------------------------------------------------
 
@@ -344,8 +301,8 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 				}
 				
 
-					// write scores 
-					// TODO: edit score reading in a more efficient way 
+				// write scores 
+				// TODO: edit score reading in a more efficient way 
 				if (active) {	
 					for (m = 1; m < 9; m++) {
 						if ( gidx + m-1 < ref_len) {
@@ -364,13 +321,7 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 
 				completed_band+=warp_len;
 			}
-			/*
-			for (int c = 0; c < query_batch_regs; c+=warp_len) {
-				if (c+warp_id+1<query_batch_regs) {
-					saved_p[warp_num*max_query_len + c + warp_id+1] = (global_inter_row[warp_num*max_query_len+(c+warp_id+1)*packed_len-1]).x;
-				}
-			}
-			*/
+
 			__syncwarp();
 
 			last_diag = (j+stretch)<<3;
@@ -400,15 +351,6 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 				}
 			}
 			
-
-			//if (zdropped) break;
-
-			/*
-			swap = global_inter_row_old;
-			global_inter_row_old = global_inter_row;
-			global_inter_row = swap;
-			*/
-
 			__syncwarp();
 
 			if (zdropped) {
@@ -450,9 +392,9 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 				}
 				
 				if (warp_id==0) {
-					device_res->aln_score[i] = maxHH;//shared_maxHH[tx];//copy the max score to the output array in the GPU mem
-					device_res->query_batch_end[i] = maxXY_x;//shared_maxHH[blockDim.x+tx];//copy the end position on query_batch sequence to the output array in the GPU mem
-					device_res->target_batch_end[i] = maxXY_y;//shared_maxHH[blockDim.x*2+tx];//copy the end position on target_batch sequence to the output array in the GPU mem
+					device_res->aln_score[i] = maxHH;//copy the max score to the output array in the GPU mem
+					device_res->query_batch_end[i] = maxXY_x;//copy the end position on query_batch sequence to the output array in the GPU mem
+					device_res->target_batch_end[i] = maxXY_y;//copy the end position on target_batch sequence to the output array in the GPU mem
 				}
 
 				for (m=0; m<4;m++) {
@@ -509,29 +451,18 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 
 	}
 	
-
-
-
-	///////////////////////////////////////////////
-
-	
-
-
-
 	return;
 
 
 }
 
-template <typename T, typename S, typename B>
+
 __global__ void saloba_sort(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, int n_tasks, uint32_t max_query_len, short2 *global_inter_row)
 {
-	int i, j, k;
-	int W = 751;
-    const uint32_t tid = (blockIdx.x * blockDim.x) + threadIdx.x;//thread ID
-	//if (tid >= n_tasks) return;
 
-	uint32_t packed_target_batch_idx, packed_query_batch_idx, read_len, ref_len, query_batch_regs, target_batch_regs;
+    const uint32_t tid = (blockIdx.x * blockDim.x) + threadIdx.x;//thread ID
+
+	uint32_t read_len, ref_len, query_batch_regs, target_batch_regs;
 
 	short2* global_idx = (short2*)(global_inter_row+max_query_len*(blockDim.x/8)*gridDim.x*3);
 
@@ -546,10 +477,6 @@ __global__ void saloba_sort(uint32_t *packed_query_batch, uint32_t *packed_targe
 
 
 	}
-
-	
-	
-	
 	
 	return;
 

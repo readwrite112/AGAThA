@@ -3,6 +3,7 @@
 */obj/*
 .vscode/*
 *.log
+output/
 
 *.o
 *.cuo

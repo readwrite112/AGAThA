@@ -4,24 +4,38 @@
 #include "gasal_align.h"
 #include "gasal_kernels.h"
 #include "host_batch.h"
-
-
-
+#include <algorithm>
+#include <unistd.h>
 
 inline void gasal_kernel_launcher(int32_t N_BLOCKS, int32_t BLOCKDIM, algo_type algo, comp_start start, gasal_gpu_storage_t *gpu_storage, int32_t actual_n_alns, int32_t k_band, data_source semiglobal_skipping_head, data_source semiglobal_skipping_tail, Bool secondBest, uint32_t maximum_sequence_length, short2* global_inter_row, int stretch, int zdrop, int W)
 {
-	switch(algo)
-	{
-		
-		KERNEL_SWITCH(LOCAL,		start, semiglobal_skipping_head, semiglobal_skipping_tail, secondBest, maximum_sequence_length, global_inter_row);
-		KERNEL_SWITCH(SEMI_GLOBAL,  start, semiglobal_skipping_head, semiglobal_skipping_tail, secondBest, maximum_sequence_length, global_inter_row);		// MACRO that expands all 32 semi-global kernels
-		//KERNEL_SWITCH(GLOBAL,		start, semiglobal_skipping_head, semiglobal_skipping_tail, secondBest, maximum_sequence_length, global_inter_row);
-		KERNEL_SWITCH(KSW,			start, semiglobal_skipping_head, semiglobal_skipping_tail, secondBest, maximum_sequence_length, global_inter_row);
-		KERNEL_SWITCH(BANDED,		start, semiglobal_skipping_head, semiglobal_skipping_tail, secondBest, maximum_sequence_length, global_inter_row);
-		default:
-		break;
 
-	}
+	std::ofstream out;
+	out.open("/agatha_ae/output/raw.log", std::ios::app);
+	cudaEvent_t begin, end;
+	cudaEventCreate(&begin);
+	cudaEventCreate(&end);
+	cudaFuncSetAttribute(gasal_local_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (BLOCKDIM/32)*((32*(8*(stretch+1)))+28)*sizeof(int32_t));
+	short2* idx;
+	cudaHostAlloc((void**)&idx, sizeof(int32_t)*actual_n_alns, cudaHostAllocDefault);
+	cudaEventRecord(begin);
+	saloba_sort<<<N_BLOCKS, BLOCKDIM, 0, gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, actual_n_alns, maximum_sequence_length, global_inter_row); 
+	cudaMemcpyAsync((void*)idx, (const void*)(global_inter_row+N_BLOCKS*(BLOCKDIM/8)*maximum_sequence_length*3), actual_n_alns * sizeof(uint32_t), cudaMemcpyDeviceToHost, gpu_storage->str);
+	cudaStreamSynchronize(gpu_storage->str);
+	std::sort(idx, idx+actual_n_alns, [](short2 a, short2 b){ return a.x<b.x;});
+	cudaMemcpyAsync((void*)(global_inter_row+N_BLOCKS*(BLOCKDIM/8)*maximum_sequence_length*3), (const void*)idx, actual_n_alns * sizeof(uint32_t), cudaMemcpyHostToDevice, gpu_storage->str);
+	gasal_local_kernel<<<N_BLOCKS, BLOCKDIM, (BLOCKDIM/32)*((32*(8*(stretch+1)))+28)*sizeof(int32_t), gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, gpu_storage->device_res, gpu_storage->device_res_second, gpu_storage->packed_tb_matrices, actual_n_alns, maximum_sequence_length, global_inter_row, stretch, zdrop, W); 
+	cudaDeviceSynchronize();
+	cudaEventRecord(end);
+	cudaEventSynchronize(end);
+	float mill = 0;
+	cudaEventElapsedTime(&mill, begin, end);
+	out << mill;
+	out << std::endl;
+	out.close();
+	cudaFreeHost(idx);
+	cudaEventDestroy(begin);
+	cudaEventDestroy(end);
 
 }
 

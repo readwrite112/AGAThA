@@ -400,8 +400,8 @@ int main(int argc, char **argv) {
 						
 						if (args->algo != GLOBAL)
 						{
-							//std::cout << "\tquery_batch_end="  << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->query_batch_end[j];
-							//std::cout << "\ttarget_batch_end=" << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->target_batch_end[j] ;
+							std::cout << "\tquery_batch_end="  << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->query_batch_end[j];
+							std::cout << "\ttarget_batch_end=" << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->target_batch_end[j] ;
 						}
 
 	
