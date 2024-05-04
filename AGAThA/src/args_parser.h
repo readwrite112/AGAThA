@@ -53,9 +53,11 @@ class Parameters{
 
         std::string query_batch_fasta_filename;
         std::string target_batch_fasta_filename;
+        std::string raw_filename;
 
         std::ifstream query_batch_fasta;
         std::ifstream target_batch_fasta;
+        std::ofstream raw_file;
 
 
     protected:

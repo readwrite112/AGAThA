@@ -29,6 +29,7 @@ Parameters::Parameters(int argc_, char **argv_) {
 
     query_batch_fasta_filename = "";
     target_batch_fasta_filename = "";
+    raw_filename = "";
 
     argc = argc_;
     argv = argv_;
@@ -38,6 +39,7 @@ Parameters::Parameters(int argc_, char **argv_) {
 Parameters::~Parameters() {
     query_batch_fasta.close();
     target_batch_fasta.close();
+    raw_file.close();
 }
 
 void Parameters::print() {
@@ -80,7 +82,7 @@ void Parameters::help() {
             std::cerr << "         -b        (AGAThA) number of blocks called per kernel" << std::endl;
             std::cerr << "         -t        (AGAThA) number of threads in a block called per kernel" << std::endl;
             std::cerr << "         -a        (AGAThA) number of alignments computed per kernel" << std::endl;
-            std::cerr << "         -p        print the alignment results" << std::endl;
+            std::cerr << "         -p        print the alignment results and time" << std::endl;
             std::cerr << "         -n INT    Number of CPU threads ["<< n_threads<<"]" << std::endl;
             std::cerr << "         --help, -h : displays this message." << std::endl;
             std::cerr << "Single-pack multi-Parameters (e.g. -sp) is not supported." << std::endl;
@@ -112,7 +114,7 @@ void Parameters::parse() {
         failure(NOT_ENOUGH_ARGS);
     }
 
-    for (c = 1; c < argc - 2; c++)
+    for (c = 1; c < argc - 3; c++)
     {
         arg_cur = std::string((const char*) (*(argv + c) ) );
         if (arg_cur.at(0) == '-' && arg_cur.at(1) == '-' )
@@ -203,6 +205,11 @@ void Parameters::parse() {
     c++;
     target_batch_fasta_filename = std::string( (const char*) (*(argv + c) ) );
 
+    if (print_out) {
+        c++;
+        raw_filename = std::string( (const char*) (*(argv + c) ) );
+    }
+
     // Parameters retrieved successfully, open files.
     fileopen();
 }
@@ -215,4 +222,8 @@ void Parameters::fileopen() {
     target_batch_fasta.open(target_batch_fasta_filename);
     if (!target_batch_fasta)
         failure(WRONG_FILES);
+
+    if (print_out) {
+        raw_file.open(raw_filename);
+    }
 }

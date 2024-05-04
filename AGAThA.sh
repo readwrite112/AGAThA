@@ -41,7 +41,7 @@ iter=0                                  #start the main program
 while [ "$iter" -lt $ITER ] 
 do  
     echo ">> Iteration $(($iter+1))"
-    ${PROG_DIR}manual -p -m 1 -x 4 -q 6 -r 2 -s 3 -z 400 -w 751 ${DATASET_DIR}ref.fasta ${DATASET_DIR}query.fasta > ${SCORE_FILE}
+    ${PROG_DIR}manual -p -m 1 -x 4 -q 6 -r 2 -s 3 -z 400 -w 751 ${DATASET_DIR}ref.fasta ${DATASET_DIR}query.fasta ${RAW_FILE} > ${SCORE_FILE}
     ((iter++))
     sleep ${IDLE}s
 done

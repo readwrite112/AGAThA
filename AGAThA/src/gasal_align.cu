@@ -7,35 +7,22 @@
 #include <algorithm>
 #include <unistd.h>
 
-inline void gasal_kernel_launcher(int32_t kernel_block_num, int32_t kernel_thread_num, gasal_gpu_storage_t *gpu_storage, int32_t actual_n_alns)
+inline void agatha_kernel_launcher(int32_t kernel_block_num, int32_t kernel_thread_num, gasal_gpu_storage_t *gpu_storage, int32_t actual_n_alns)
 {
 
-	std::ofstream out;
-	out.open("/agatha_ae/output/raw.log", std::ios::app);
-	cudaEvent_t begin, end;
-	cudaEventCreate(&begin);
-	cudaEventCreate(&end);
-	cudaFuncSetAttribute(agatha_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (kernel_thread_num/32)*((32*(8*(gpu_storage->slice_width+1)))+28)*sizeof(int32_t));
+
 	short2* idx;
 	cudaHostAlloc((void**)&idx, sizeof(int32_t)*actual_n_alns, cudaHostAllocDefault);
-	cudaEventRecord(begin);
+
 	agatha_sort<<<kernel_block_num, kernel_thread_num, 0, gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, actual_n_alns, gpu_storage->maximum_sequence_length, gpu_storage->global_buffer); 
 	cudaMemcpyAsync((void*)idx, (const void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), actual_n_alns * sizeof(uint32_t), cudaMemcpyDeviceToHost, gpu_storage->str);
 	cudaStreamSynchronize(gpu_storage->str);
 	std::sort(idx, idx+actual_n_alns, [](short2 a, short2 b){ return a.x<b.x;});
 	cudaMemcpyAsync((void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), (const void*)idx, actual_n_alns * sizeof(uint32_t), cudaMemcpyHostToDevice, gpu_storage->str);
+	
 	agatha_kernel<<<kernel_block_num, kernel_thread_num, (kernel_thread_num/32)*((32*(8*(gpu_storage->slice_width+1)))+28)*sizeof(int32_t), gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, gpu_storage->device_res, gpu_storage->device_res_second, gpu_storage->packed_tb_matrices, actual_n_alns, gpu_storage->maximum_sequence_length, gpu_storage->global_buffer); 
-	cudaDeviceSynchronize();
-	cudaEventRecord(end);
-	cudaEventSynchronize(end);
-	float mill = 0;
-	cudaEventElapsedTime(&mill, begin, end);
-	out << mill;
-	out << std::endl;
-	out.close();
+	
 	cudaFreeHost(idx);
-	cudaEventDestroy(begin);
-	cudaEventDestroy(end);
 
 }
 
@@ -230,8 +217,31 @@ void gasal_aln_async(gasal_gpu_storage_t *gpu_storage, const uint32_t actual_que
 	}
 	
     //--------------------------------------launch alignment kernels--------------------------------------------------------------
+
+	cudaFuncSetAttribute(agatha_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (kernel_thread_num/32)*((32*(8*(gpu_storage->slice_width+1)))+28)*sizeof(int32_t));
 	
-	gasal_kernel_launcher(params->kernel_block_num, params->kernel_thread_num, gpu_storage, actual_n_alns);
+	if (params->print_out) {
+		float mill = 0;
+		cudaEvent_t begin, end;
+		cudaEventCreate(&begin);
+		cudaEventCreate(&end);
+		cudaEventRecord(begin);
+
+		agatha_kernel_launcher(params->kernel_block_num, params->kernel_thread_num, gpu_storage, actual_n_alns);
+		
+		cudaDeviceSynchronize();
+		cudaEventRecord(end);
+		cudaEventSynchronize(end);
+		
+		cudaEventElapsedTime(&mill, begin, end);
+		params->raw_file << mill << std::endl;
+
+		cudaEventDestroy(begin);
+		cudaEventDestroy(end);
+	} else {
+		agatha_kernel_launcher(params->kernel_block_num, params->kernel_thread_num, gpu_storage, actual_n_alns);
+	}
+	
 	
 	
 
