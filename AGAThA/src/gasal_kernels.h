@@ -31,6 +31,9 @@ __constant__ int32_t _cudaGapOE; /*sum of gap open and extension penalties*/
 __constant__ int32_t _cudaGapExtend; /*sum of gap extend*/
 __constant__ int32_t _cudaMatchScore; /*score for a match*/
 __constant__ int32_t _cudaMismatchScore; /*penalty for a mismatch*/
+__constant__ int32_t _cudaSliceWidth; /*(AGAThA) slice width*/
+__constant__ int32_t _cudaZThreshold; /*(AGAThA) zdrop threshold*/
+__constant__ int32_t _cudaBandWidth; /*(AGAThA) band width*/
 
 #define MINUS_INF SHRT_MIN
 #define MINUS_INF2 SHRT_MIN/2

@@ -32,29 +32,21 @@ class Parameters{
         void parse();
         void fileopen();
 
-
-
         int32_t sa;
         int32_t sb;
         int32_t gapo;
         int32_t gape;
-        comp_start start_pos; 
+
         int print_out;
         int n_threads;
-        int32_t k_band;
-        int stretch;
-        int zdrop;
-        int W;
 
-        Bool secondBest;
+        int slice_width;
+        int z_threshold;
+        int band_width;
+
 
         bool isPacked;
         bool isReverseComplement;
-
-        data_source semiglobal_skipping_head;
-        data_source semiglobal_skipping_tail;
-
-        algo_type algo;
 
         std::string query_batch_fasta_filename;
         std::string target_batch_fasta_filename;

@@ -13,26 +13,16 @@ Parameters::Parameters(int argc_, char **argv_) {
     sb = (4);
     gapo = (4);
     gape = (2);
-    start_pos = (WITHOUT_START); 
+
     print_out = (0);
     n_threads = (1);
-    stretch = (3);
-    zdrop = (400);
-    W = (751);
-
-    
-    k_band = (0);
+    // For AGAThA
+    slice_width = (3);
+    z_threshold = (400);
+    band_width = (751);
 
     isPacked = false;
     isReverseComplement = false;
-
-    secondBest = FALSE;
-
-    // query head, target head, query tail, target tail
-    semiglobal_skipping_head = TARGET;
-    semiglobal_skipping_tail = TARGET;
-
-    algo = (UNKNOWN);
 
     query_batch_fasta_filename = "";
     target_batch_fasta_filename = "";
@@ -49,9 +39,9 @@ Parameters::~Parameters() {
 
 void Parameters::print() {
     std::cerr <<  "sa=" << sa <<" , sb=" << sb <<" , gapo=" <<  gapo << " , gape="<<gape << std::endl;
-    std::cerr <<  "start_pos=" << start_pos <<" , print_out=" << print_out <<" , n_threads=" <<  n_threads << std::endl;
-    std::cerr <<  "semiglobal_skipping_head=" << semiglobal_skipping_head <<" , semiglobal_skipping_tail=" << semiglobal_skipping_tail <<" , algo=" <<  algo << std::endl;
-    std::cerr <<  std::boolalpha << "isPacked = " << isPacked  << " , secondBest = " << secondBest << std::endl;
+    std::cerr <<  "slice_width=" << slice_width << ", z_threshold=" << z_threshold << ", band_width=" << band_width << std::endl;
+    std::cerr <<  "print_out=" << print_out <<" , n_threads=" <<  n_threads << std::endl;
+    std::cerr <<  std::boolalpha << "isPacked = " << isPacked  << std::endl;
     std::cerr <<  "query_batch_fasta_filename=" << query_batch_fasta_filename <<" , target_batch_fasta_filename=" << target_batch_fasta_filename << std::endl;
 }
 
@@ -75,20 +65,17 @@ void Parameters::failure(fail_type f) {
 }
 
 void Parameters::help() {
-            std::cerr << "Usage: ./test_prog.out [-a] [-b] [-q] [-r] [-s] [-t] [-p] [-n] [-y] <query_batch.fasta> <target_batch.fasta>" << std::endl;
+            std::cerr << "Usage: ./test_prog.out [-a] [-b] [-q] [-r] [-s] [-z] [-w] [-p] [-n] <query_batch.fasta> <target_batch.fasta>" << std::endl;
             std::cerr << "Options: -a INT    match score ["<< sa <<"]" << std::endl;
             std::cerr << "         -b INT    mismatch penalty [" << sb << "]"<< std::endl;
             std::cerr << "         -q INT    gap open penalty [" << gapo << "]" << std::endl;
             std::cerr << "         -r INT    gap extension penalty ["<< gape <<"]" << std::endl;
-            std::cerr << "         -s        find the start position" << std::endl;
-            std::cerr << "         -t        compute traceback. With this option enabled, \"-s\" has no effect as start position will always be computed with traceback" << std::endl;
+            std::cerr << "         -s        (AGAThA) slice_width" << std::endl;
+            std::cerr << "         -z        (AGAThA) z-drop threshold" << std::endl;
+            std::cerr << "         -w        (AGAThA) band width" << std::endl;
             std::cerr << "         -p        print the alignment results" << std::endl;
             std::cerr << "         -n INT    Number of threads ["<< n_threads<<"]" << std::endl;
-            std::cerr << "         -y AL_TYPE       Alignment type . Must be \"local\", \"semi_global\", \"global\", \"ksw\" "  << std::endl;
-	    std::cerr << "         -x HEAD TAIL     specifies, for semi-global alignment, wha should be skipped for heads and tails of the sequences. (NONE, QUERY, TARGET, BOTH)" << std::endl;
-            std::cerr << "         -k INT    Band width in case \"banded\" is selected."  << std::endl;
             std::cerr << "         --help, -h : displays this message." << std::endl;
-            std::cerr << "         --second-best   displays second best score (WITHOUT_START only)." << std::endl;
             std::cerr << "Single-pack multi-Parameters (e.g. -sp) is not supported." << std::endl;
             std::cerr << "		  "  << std::endl;
 }
@@ -128,10 +115,6 @@ void Parameters::parse() {
                 help();
                 exit(0);
             }
-            if (!arg_cur.compare("--second-best"))
-            {
-                secondBest = TRUE;
-            }
 
         } else if (arg_cur.at(0) == '-' )
         {
@@ -140,20 +123,6 @@ void Parameters::parse() {
             char param = arg_cur.at(1);
             switch(param)
             {
-                case 'y':
-                    c++;
-                    arg_next = std::string((const char*) (*(argv + c) ) );
-                    if (!arg_next.compare("local"))
-                        algo = LOCAL;
-                    else if (!arg_next.compare("semi_global"))
-                        algo = SEMI_GLOBAL;
-                    else if (!arg_next.compare("global"))
-                        algo = GLOBAL;
-                    else if (!arg_next.compare("ksw"))
-                    {
-                        algo = KSW;
-                    }
-                break;
                 case 'a':
                     c++;
                     arg_next = std::string((const char*) (*(argv + c) ) );
@@ -174,12 +143,6 @@ void Parameters::parse() {
                     arg_next = std::string((const char*) (*(argv + c) ) );
                     gape = std::stoi(arg_next);
                 break;
-                case 's':
-                    start_pos = WITH_START;
-                break;
-                case 't':
-                	start_pos = WITH_TB;
-                	break;
                 case 'p':
                     print_out = 1;
                 break;
@@ -188,56 +151,20 @@ void Parameters::parse() {
                     arg_next = std::string((const char*) (*(argv + c) ) );
                     n_threads = std::stoi(arg_next);
                 break;
-                case 'k':
+                case 's':
                     c++;
                     arg_next = std::string((const char*) (*(argv + c) ) );
-                    k_band = std::stoi(arg_next);
-                break;
-                case 'd':
-                    c++;
-                    arg_next = std::string((const char*) (*(argv + c) ) );
-                    stretch = std::stoi(arg_next);
+                    slice_width = std::stoi(arg_next);
                 break;
                 case 'z':
                     c++;
                     arg_next = std::string((const char*) (*(argv + c) ) );
-                    zdrop = std::stoi(arg_next);
+                    z_threshold = std::stoi(arg_next);
                 break;
                 case 'w':
                     c++;
                     arg_next = std::string((const char*) (*(argv + c) ) );
-                    W = std::stoi(arg_next);
-                break;
-                case 'x':
-                    c++;
-                    arg_next = std::string((const char*) (*(argv + c) ) );
-                    if (!arg_next.compare("NONE"))
-                        semiglobal_skipping_head = NONE;
-                    else if (!arg_next.compare("TARGET"))
-                        semiglobal_skipping_head = TARGET;
-                    else if (!arg_next.compare("QUERY"))
-                        semiglobal_skipping_head = QUERY;
-                    else if (!arg_next.compare("BOTH"))
-                        semiglobal_skipping_head = BOTH;
-                    else 
-                    {
-                        failure(WRONG_ARG);
-                    }
-
-                    c++;
-                    arg_next = std::string((const char*) (*(argv + c) ) );
-                    if (!arg_next.compare("NONE"))
-                        semiglobal_skipping_tail = NONE;
-                    else if (!arg_next.compare("TARGET"))
-                        semiglobal_skipping_tail = TARGET;
-                    else if (!arg_next.compare("QUERY"))
-                        semiglobal_skipping_tail = QUERY;
-                    else if (!arg_next.compare("BOTH"))
-                        semiglobal_skipping_tail = BOTH;
-                    else 
-                    {
-                        failure(WRONG_ARG);
-                    }
+                    band_width = std::stoi(arg_next);
                 break;
 
             }

@@ -40,10 +40,6 @@ void gasal_host_alns_resize(gasal_gpu_storage_t *gpu_storage, int new_max_alns, 
 	gpu_storage->host_query_op =  cudaHostRealloc<uint8_t>((void*) gpu_storage->host_query_op, new_max_alns, gpu_storage->host_max_n_alns);
 	gpu_storage->host_target_op =  cudaHostRealloc<uint8_t>((void*) gpu_storage->host_target_op, new_max_alns, gpu_storage->host_max_n_alns);
 	
-	if (params->algo == KSW)
-		gpu_storage->host_seed_scores = cudaHostRealloc<uint32_t>(gpu_storage->host_seed_scores, new_max_alns, gpu_storage->host_max_n_alns);
-	//fprintf(stderr, "_ops done ");
-
 	gpu_storage->host_query_batch_lens = cudaHostRealloc<uint32_t>((void*) gpu_storage->host_query_batch_lens, new_max_alns, gpu_storage->host_max_n_alns);
 	gpu_storage->host_target_batch_lens = cudaHostRealloc<uint32_t>((void*) gpu_storage->host_target_batch_lens, new_max_alns, gpu_storage->host_max_n_alns);
 	//fprintf(stderr, "_lens done ");
@@ -57,18 +53,10 @@ void gasal_host_alns_resize(gasal_gpu_storage_t *gpu_storage, int new_max_alns, 
 	gpu_storage->device_cpy = gasal_res_new_device_cpy(new_max_alns, params);
 	gpu_storage->device_res = gasal_res_new_device(gpu_storage->device_cpy);
 
-	if (params->secondBest)
-	{	
-		gasal_res_destroy_host(gpu_storage->host_res_second);
-		gpu_storage->host_res_second = gasal_res_new_host(new_max_alns, params);
-		gpu_storage->device_cpy_second = gasal_res_new_device_cpy(new_max_alns, params);
-		gpu_storage->device_res_second = gasal_res_new_device(gpu_storage->device_cpy_second);
-
-	} else {
-		gpu_storage->host_res_second = NULL;
-		gpu_storage->device_cpy_second = NULL;
-		gpu_storage->device_res_second = NULL;
-	}
+	gpu_storage->host_res_second = NULL;
+	gpu_storage->device_cpy_second = NULL;
+	gpu_storage->device_res_second = NULL;
+	
 	
 	//fprintf(stderr, "_res done ");
 

@@ -5,12 +5,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-
-//#include "/usr/local/cuda-10.2/targets/x86_64-linux/include/cuda_runtime.h"
 #include "/usr/local/cuda-11.7/targets/x86_64-linux/include/cuda_runtime.h"
-//#include "/usr/local/cuda-11.2/targets/x86_64-linux/include/cuda_runtime.h"
-//#include "/usr/local/cuda-11.3/targets/x86_64-linux/include/cuda_runtime.h"
-//#include "/usr/local/cuda-11.4/targets/x86_64-linux/include/cuda_runtime.h"
 
 #ifndef HOST_MALLOC_SAFETY_FACTOR
 #define HOST_MALLOC_SAFETY_FACTOR 5
@@ -146,6 +141,9 @@ typedef struct {
 	uint64_t packed_tb_matrix_size;
 	uint4 *packed_tb_matrices;
 
+	//for AGAThA
+	int32_t slice_width;
+
 
 	cudaStream_t str;
 	int is_free;
@@ -166,6 +164,9 @@ typedef struct{
 	int32_t mismatch;
 	int32_t gap_open;
 	int32_t gap_extend;
+	int32_t slice_width;
+	int32_t z_threshold;
+	int32_t band_width;
 } gasal_subst_scores;
 
 

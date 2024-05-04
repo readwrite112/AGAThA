@@ -46,9 +46,6 @@ int main(int argc, char **argv) {
 
 	int print_out = args->print_out;
 	int n_threads = args->n_threads;
-	int stretch = args->stretch;
-	int zdrop = args->zdrop;
-	int W = args->W;
 
 	//--------------copy substitution scores to GPU--------------------
 	gasal_subst_scores sub_scores;
@@ -57,6 +54,9 @@ int main(int argc, char **argv) {
 	sub_scores.mismatch = args->sb;
 	sub_scores.gap_open = args->gapo;
 	sub_scores.gap_extend = args->gape;
+	sub_scores.slice_width = args->slice_width;
+	sub_scores.z_threshold = args->z_threshold;
+	sub_scores.band_width = args->band_width;
 
 	gasal_copy_subst_scores(&sub_scores);
 
@@ -362,7 +362,7 @@ int main(int argc, char **argv) {
 				//----------------------------------------------------------------------------------------------------
 				//-----------------calling the GASAL2 non-blocking alignment function---------------------------------
 				local_time.Start();
-				gasal_aln_async(gpu_batch_arr[gpu_batch_arr_idx].gpu_storage, query_batch_bytes, target_batch_bytes, gpu_batch_arr[gpu_batch_arr_idx].n_seqs_batch, args, maximum_sequence_length, global_inter_row, stretch, zdrop, W);
+				gasal_aln_async(gpu_batch_arr[gpu_batch_arr_idx].gpu_storage, query_batch_bytes, target_batch_bytes, gpu_batch_arr[gpu_batch_arr_idx].n_seqs_batch, args, maximum_sequence_length, global_inter_row);
 				local_time.Stop();
 				gpu_batch_arr[gpu_batch_arr_idx].gpu_storage->current_n_alns = 0;
 				//---------------------------------------------------------------------------------
@@ -380,88 +380,16 @@ int main(int argc, char **argv) {
 				if (gasal_is_aln_async_done(gpu_batch_arr[gpu_batch_arr_idx].gpu_storage) == 0) {
 					int j = 0;
 					if(print_out) {
-					#pragma omp critical
-					for (int i = gpu_batch_arr[gpu_batch_arr_idx].batch_start; j < gpu_batch_arr[gpu_batch_arr_idx].n_seqs_batch; i++, j++) {
-						/*
-						std::cout << "query_name=" << query_headers[i] ;
-						std::cout << "\ttarget_name=" << target_headers[i] ;
-						std::cout << "\tscore=" << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->aln_score[j] ;
-						*/
-						std::cout << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->aln_score[j] ;
-						
-						/// WARNING : INEQUALITY ON ENUM: CAN BREAK IF ENUM ORDER IS CHANGED
-						if ((args->start_pos == WITH_START || args->start_pos == WITH_TB)
-							&& ((args->algo == SEMI_GLOBAL && (args->semiglobal_skipping_head != NONE || args->semiglobal_skipping_head != NONE))
-								|| args->algo > SEMI_GLOBAL))
-						{
-							std::cout << "\tquery_batch_start=" << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->query_batch_start[j];
-							std::cout << "\ttarget_batch_start=" << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->target_batch_start[j];
-						}
-						
-						if (args->algo != GLOBAL)
-						{
+						#pragma omp critical
+						for (int i = gpu_batch_arr[gpu_batch_arr_idx].batch_start; j < gpu_batch_arr[gpu_batch_arr_idx].n_seqs_batch; i++, j++) {
+
+							std::cout << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->aln_score[j] ;
+							
 							std::cout << "\tquery_batch_end="  << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->query_batch_end[j];
 							std::cout << "\ttarget_batch_end=" << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->target_batch_end[j] ;
+						
+							std::cout << std::endl;
 						}
-
-	
-
-						if (args->secondBest)
-						{
-							std::cout << "\t2nd_score=" << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res_second->aln_score[j] ;
-							std::cout << "\t2nd_query_batch_end="  << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res_second->query_batch_end[j];
-							std::cout << "\t2nd_target_batch_end=" << (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res_second->target_batch_end[j] ;
-						}
-
-						if (args->start_pos == WITH_TB) {
-							std::cout << "\tCIGAR=";
-							int u;
-							int offset = (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_query_batch_offsets[j];
-							int n_cigar_ops = (gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->n_cigar_ops[j];
-							int last_op = ((gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->cigar[offset + n_cigar_ops - 1]) & 3;
-							int count = ((gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->cigar[offset + n_cigar_ops - 1]) >> 2;
-							for (u = n_cigar_ops - 2; u >= 0 ; u--){
-								int curr_op = ((gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->cigar[offset + u]) & 3;
-								if (curr_op == last_op) {
-									count +=  ((gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->cigar[offset + u]) >> 2;
-								} else {
-									char op;
-									switch (last_op) {
-									case 0: op = 'M';
-									break;
-									case 1: op = 'X';
-									break;
-									case 2: op = 'D';
-									break;
-									case 3: op = 'I';
-									break;
-									default: op = 'E';
-									break;
-
-									}
-									std::cout << count << op;
-									count =  ((gpu_batch_arr[gpu_batch_arr_idx].gpu_storage)->host_res->cigar[offset + u]) >> 2;
-
-								}
-								last_op = curr_op;
-
-							}
-							char op;
-							switch (last_op) {
-							case 0: op = 'M';
-							break;
-							case 1: op = 'X';
-							break;
-							case 2: op = 'D';
-							break;
-							case 3: op = 'I';
-							break;
-
-							}
-							std::cout << count << op;
-						}
-						std::cout << std::endl;
-					}
 					}
 					n_batchs_done++;
 				}

@@ -23,7 +23,7 @@ gasal_gpu_storage_v gasal_init_gpu_storage_v(int n_streams) {
 }
 
 
-void gasal_init_streams(gasal_gpu_storage_v *gpu_storage_vec,  int max_query_len, int max_target_len, int max_n_alns,  Parameters *params) {
+void gasal_init_streams(gasal_gpu_storage_v *gpu_storage_vec,  int max_query_len, int max_target_len, int max_n_alns, Parameters *params) {
 
 	cudaError_t err;
 	int i;
@@ -71,15 +71,8 @@ void gasal_init_streams(gasal_gpu_storage_v *gpu_storage_vec,  int max_query_len
 			CHECKCUDAERROR(cudaMalloc(&(gpu_storage_vec->a[i].packed_target_batch), (gpu_max_target_batch_bytes/8) * sizeof(uint32_t)));
 		}
 
-		if (params->algo == KSW)
-		{
-			CHECKCUDAERROR(cudaHostAlloc(&(gpu_storage_vec->a[i].host_seed_scores), host_max_n_alns * sizeof(uint32_t), cudaHostAllocDefault));
-			CHECKCUDAERROR(cudaMalloc(&(gpu_storage_vec->a[i].seed_scores), host_max_n_alns * sizeof(uint32_t)));
-		} else {
-			gpu_storage_vec->a[i].host_seed_scores = NULL;
-			gpu_storage_vec->a[i].seed_scores = NULL;
-		}
-
+		gpu_storage_vec->a[i].host_seed_scores = NULL;
+		gpu_storage_vec->a[i].seed_scores = NULL;
 
 		CHECKCUDAERROR(cudaHostAlloc(&(gpu_storage_vec->a[i].host_query_batch_lens), host_max_n_alns * sizeof(uint32_t), cudaHostAllocDefault));
 		CHECKCUDAERROR(cudaHostAlloc(&(gpu_storage_vec->a[i].host_target_batch_lens), host_max_n_alns * sizeof(uint32_t), cudaHostAllocDefault));
@@ -93,27 +86,12 @@ void gasal_init_streams(gasal_gpu_storage_v *gpu_storage_vec,  int max_query_len
 		
 
 		gpu_storage_vec->a[i].host_res = gasal_res_new_host(host_max_n_alns, params);
-		if(params->start_pos == WITH_TB) CHECKCUDAERROR(cudaHostAlloc(&(gpu_storage_vec->a[i].host_res->cigar), gpu_max_query_batch_bytes * sizeof(uint8_t),cudaHostAllocDefault));
 		gpu_storage_vec->a[i].device_cpy = gasal_res_new_device_cpy(max_n_alns,  params);
 		gpu_storage_vec->a[i].device_res = gasal_res_new_device(gpu_storage_vec->a[i].device_cpy);
 
-		if (params->secondBest)
-		{	
-			gpu_storage_vec->a[i].host_res_second = gasal_res_new_host(host_max_n_alns,  params);
-			gpu_storage_vec->a[i].device_cpy_second = gasal_res_new_device_cpy(host_max_n_alns, params);
-			gpu_storage_vec->a[i].device_res_second = gasal_res_new_device(gpu_storage_vec->a[i].device_cpy_second);
-
-		} else {
-			gpu_storage_vec->a[i].host_res_second = NULL;
-			gpu_storage_vec->a[i].device_cpy_second = NULL;
-			gpu_storage_vec->a[i].device_res_second = NULL;
-		}
-
-		if (params->start_pos == WITH_TB) {
-			gpu_storage_vec->a[i].packed_tb_matrix_size = ((uint32_t)ceil(((double)((uint64_t)max_query_len_8*(uint64_t)max_target_len_8))/32)) * gpu_max_n_alns;
-			CHECKCUDAERROR(cudaMalloc(&(gpu_storage_vec->a[i].packed_tb_matrices), gpu_storage_vec->a[i].packed_tb_matrix_size * sizeof(uint4)));
-		}
-
+		gpu_storage_vec->a[i].host_res_second = NULL;
+		gpu_storage_vec->a[i].device_cpy_second = NULL;
+		gpu_storage_vec->a[i].device_res_second = NULL;
 
 		CHECKCUDAERROR(cudaStreamCreate(&(gpu_storage_vec->a[i].str)));
 		gpu_storage_vec->a[i].is_free = 1;
@@ -124,6 +102,7 @@ void gasal_init_streams(gasal_gpu_storage_v *gpu_storage_vec,  int max_query_len
 		gpu_storage_vec->a[i].gpu_max_target_batch_bytes = gpu_max_target_batch_bytes;
 		gpu_storage_vec->a[i].gpu_max_n_alns = gpu_max_n_alns;
 		gpu_storage_vec->a[i].current_n_alns = 0;
+		gpu_storage_vec->a[i].slice_width = params->slice_width;
 	}
 }
 
@@ -140,18 +119,9 @@ void gasal_destroy_streams(gasal_gpu_storage_v *gpu_storage_vec, Parameters *par
 		gasal_res_destroy_host(gpu_storage_vec->a[i].host_res);
 		gasal_res_destroy_device(gpu_storage_vec->a[i].device_res, gpu_storage_vec->a[i].device_cpy);
 
-		if (params->secondBest)
-		{
-			gasal_res_destroy_host(gpu_storage_vec->a[i].host_res_second);
-			gasal_res_destroy_device(gpu_storage_vec->a[i].device_res_second, gpu_storage_vec->a[i].device_cpy_second);
-		}
+		if (gpu_storage_vec->a[i].seed_scores != NULL) CHECKCUDAERROR(cudaFree(gpu_storage_vec->a[i].seed_scores));
+		if (gpu_storage_vec->a[i].host_seed_scores != NULL) CHECKCUDAERROR(cudaFreeHost(gpu_storage_vec->a[i].host_seed_scores));
 
-
-		if (!(params->algo == KSW))
-		{
-			if (gpu_storage_vec->a[i].seed_scores != NULL) CHECKCUDAERROR(cudaFree(gpu_storage_vec->a[i].seed_scores));
-			if (gpu_storage_vec->a[i].host_seed_scores != NULL) CHECKCUDAERROR(cudaFreeHost(gpu_storage_vec->a[i].host_seed_scores));
-		}
 
 		if (gpu_storage_vec->a[i].query_op != NULL) CHECKCUDAERROR(cudaFree(gpu_storage_vec->a[i].query_op));
 		if (gpu_storage_vec->a[i].target_op != NULL) CHECKCUDAERROR(cudaFree(gpu_storage_vec->a[i].target_op));
@@ -245,8 +215,5 @@ void gasal_gpu_mem_free(gasal_gpu_storage_t *gpu_storage, Parameters *params) {
 	if (gpu_storage->target_batch_lens != NULL) CHECKCUDAERROR(cudaFree(gpu_storage->target_batch_lens));
 	
 	gasal_res_destroy_device(gpu_storage->device_res,gpu_storage->device_cpy);
-	if (params->secondBest)
-	{
-		gasal_res_destroy_device(gpu_storage->device_res_second, gpu_storage->device_cpy_second);
-	}
+
 }

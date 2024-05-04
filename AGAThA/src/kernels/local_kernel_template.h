@@ -17,7 +17,7 @@
 		p[m] = h[m-1];
 
 #define CORE_LOCAL_COMPUTE() \
-		if (ridx + W < gidx + m-1 || ridx - W > gidx + m-1) { \
+		if (ridx + _cudaBandWidth < gidx + m-1 || ridx - _cudaBandWidth > gidx + m-1) { \
 			p[m] = h[m-1]; \
 		} else { \
 			uint32_t gbase = (gpac >> l) & 15;\
@@ -47,7 +47,7 @@
 
 
 
-__global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, gasal_res_t *device_res, gasal_res_t *device_res_second, uint4 *packed_tb_matrices, int n_tasks, uint32_t max_query_len, short2 *global_inter_row, int stretch, int zdrop, int W)
+__global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, gasal_res_t *device_res, gasal_res_t *device_res_second, uint4 *packed_tb_matrices, int n_tasks, uint32_t max_query_len, short2 *global_inter_row)
 {
     const uint32_t tid = (blockIdx.x * blockDim.x) + threadIdx.x;//thread ID
 
@@ -105,7 +105,7 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 	int32_t* global_inter_col_p= (int32_t*)(global_inter_col+max_query_len*(blockDim.x/8)*gridDim.x);
 	short2* global_idx = (short2*)(global_inter_row+max_query_len*(blockDim.x/8)*gridDim.x*3);
 
-	const int total_shm = packed_len*(stretch+1); 
+	const int total_shm = packed_len*(_cudaSliceWidth+1); 
 	bool active, zdropped;
 
 	int32_t* diag_maxHH = (int32_t*)(shared_maxHH+(threadIdx.x/32)*total_shm*32);
@@ -132,14 +132,14 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 			l = j*warp_len + warp_id;
 			if ((l) < max_query_len) {
 				k = -(_cudaGapOE + (_cudaGapExtend*(l)));
-				global_inter_row[warp_num*max_query_len + l] =  l <= W? make_short2(k, k-_cudaGapOE):initHD;	
+				global_inter_row[warp_num*max_query_len + l] =  l <= _cudaBandWidth? make_short2(k, k-_cudaGapOE):initHD;	
 			}
 		}
 		for (j = 0; j < job_per_query; j++) {
 			l = j*warp_len + warp_id;
 			if ((l) < max_query_len) {
 				k = -(_cudaGapOE + (_cudaGapExtend*(l)));
-				global_inter_col[warp_num*max_query_len + l] =  l <= W? make_short2(k, k-_cudaGapOE):initHD;	
+				global_inter_col[warp_num*max_query_len + l] =  l <= _cudaBandWidth? make_short2(k, k-_cudaGapOE):initHD;	
 			}
 		}
 		
@@ -147,7 +147,7 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 			l = j*warp_len + warp_id;
 			if (l < max_query_len) {
 				k = -(_cudaGapOE+(_cudaGapExtend*(l*packed_len-1)));
-				global_inter_col_p[warp_num*max_query_len + l] = l==0? 0: (l*packed_len-1) <= W? k: MINUS_INF2; 	
+				global_inter_col_p[warp_num*max_query_len + l] = l==0? 0: (l*packed_len-1) <= _cudaBandWidth? k: MINUS_INF2; 	
 			}
 		}
 		
@@ -182,9 +182,9 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 		while (j < total_diags) {
 
 			band_start = max(0, (j-query_batch_regs+1));
-			band_start = max(band_start, (j*packed_len + packed_len-1+1 - W)/2/packed_len);
-			band_end = min(target_batch_regs-1, j+stretch-1);
-			band_end = min(band_end, ((j+stretch-1)*packed_len + packed_len-1 + W)/2/packed_len);
+			band_start = max(band_start, (j*packed_len + packed_len-1+1 - _cudaBandWidth)/2/packed_len);
+			band_end = min(target_batch_regs-1, j+_cudaSliceWidth-1);
+			band_end = min(band_end, ((j+_cudaSliceWidth-1)*packed_len + packed_len-1 + _cudaBandWidth)/2/packed_len);
 			completed_band = band_start;
 			
 
@@ -221,13 +221,13 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 						p[m] = h[m-1];
 					}
 
-					stretch_start = (max(0, (band_target*packed_len - W)))/packed_len;
-					stretch_end = min( query_batch_regs-1, ( (band_target*packed_len + packed_len -1 + W )) /packed_len );
+					stretch_start = (max(0, (band_target*packed_len - _cudaBandWidth)))/packed_len;
+					stretch_end = min( query_batch_regs-1, ( (band_target*packed_len + packed_len -1 + _cudaBandWidth )) /packed_len );
 					gpac = packed_target_batch[packed_target_batch_idx + band_target];
 				}
 					
 					
-				for (y = 0; y < stretch; y++) {
+				for (y = 0; y < _cudaSliceWidth; y++) {
 					if (active && stretch_start <= band_query && band_query <=stretch_end) {
 						
 						rpac = packed_query_batch[packed_query_batch_idx + band_query]; 
@@ -294,7 +294,7 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 
 			__syncwarp();
 
-			last_diag = (j+stretch)<<3;
+			last_diag = (j+_cudaSliceWidth)<<3;
 			prev_maxHH = read_len+ref_len-1;
 
 			if (!zdropped) {
@@ -309,7 +309,7 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 						} else if ( (temp&65535) >= maxXY_y && (diag_idx-(temp&65535)) >= maxXY_x) {
 							int tl =  (temp&65535) - maxXY_y, ql = (diag_idx-(temp&65535)) - maxXY_x, l;
 							l = tl > ql? tl - ql : ql - tl;
-							if (zdrop >= 0 && maxHH - (temp>>16) > zdrop + l*_cudaGapExtend) {
+							if (_cudaZThreshold >= 0 && maxHH - (temp>>16) > _cudaZThreshold + l*_cudaGapExtend) {
 								
 								zdropped = true;
 								break;
@@ -335,7 +335,7 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 
 			
 
-			j+=stretch;
+			j+=_cudaSliceWidth;
 
 			if (j >= total_diags) {
 
@@ -350,7 +350,7 @@ __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packe
 						} else if ( (temp&65535) >= maxXY_y && (k-(temp&65535)) >= maxXY_x) {
 							int tl =  (temp&65535) - maxXY_y, ql = (k-(temp&65535)) - maxXY_x, l;
 							l = tl > ql? tl - ql : ql - tl;
-							if (zdrop >= 0 && maxHH - (temp>>16) > zdrop + l*_cudaGapExtend) {
+							if (_cudaZThreshold >= 0 && maxHH - (temp>>16) > _cudaZThreshold + l*_cudaGapExtend) {
 								
 								zdropped = true;
 								break;
