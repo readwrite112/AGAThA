@@ -71,6 +71,4 @@ maxHH = (maxHH < curr) ? curr : maxHH;
 
 #include "kernels/local_kernel_template.h"
 
-#include "kernels/get_tb.h"
-
 #endif

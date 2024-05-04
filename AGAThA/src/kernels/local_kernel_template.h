@@ -45,36 +45,6 @@
 		diag_idx = ((gidx + m-1+ridx)&(total_shm-1))<<5;\
 		diag_maxHH[real_warp_id+diag_idx] = max(diag_maxHH[real_warp_id+diag_idx], (h[m]<<16) +gidx+ m-1);\
 
-#define CORE_LOCAL_COMPUTE_START() \
-		uint32_t gbase = (gpac >> l) & 15;\
-		DEV_GET_SUB_SCORE_LOCAL(subScore, rbase, gbase) \
-		int32_t tmp_hm = p[m] + subScore; \
-		h[m] = max(tmp_hm, f[m]); \
-		h[m] = max(h[m], e); \
-		h[m] = max(h[m], 0); \
-		f[m] = max(tmp_hm- _cudaGapOE, f[m] - _cudaGapExtend); \
-		e = max(tmp_hm- _cudaGapOE, e - _cudaGapExtend); \
-		maxXY_y = (maxHH < h[m]) ? gidx + (m-1) : maxXY_y; \
-		maxHH = (maxHH < h[m]) ? h[m] : maxHH; \
-		p[m] = h[m-1]; \
-
-#define CORE_LOCAL_COMPUTE_TB(direction_reg) \
-		uint32_t gbase = (gpac >> l) & 15;\
-		DEV_GET_SUB_SCORE_LOCAL(subScore, rbase, gbase) \
-		int32_t tmp_hm = p[m] + subScore; \
-		uint32_t m_or_x = tmp_hm >= p[m] ? 0 : 1;\
-		h[m] = max(tmp_hm, f[m]); \
-		h[m] = max(h[m], e); \
-		h[m] = max(h[m], 0); \
-		direction_reg |= h[m] == tmp_hm ? m_or_x << (28 - ((m - 1) << 2)) : (h[m] == f[m] ? (uint32_t)3 << (28 - ((m - 1) << 2)) : (uint32_t)2 << (28 - ((m - 1) << 2)));\
-		direction_reg |= (tmp_hm - _cudaGapOE) > (f[m] - _cudaGapExtend) ?  (uint32_t)0 : (uint32_t)1 << (31 - ((m - 1) << 2));\
-		f[m] = max(tmp_hm- _cudaGapOE, f[m] - _cudaGapExtend); \
-		direction_reg |= (tmp_hm - _cudaGapOE) > (e - _cudaGapExtend) ?  (uint32_t)0 : (uint32_t)1 << (30 - ((m - 1) << 2));\
-		e = max(tmp_hm- _cudaGapOE, e - _cudaGapExtend); \
-		maxXY_y = (maxHH < h[m]) ? gidx + (m-1) : maxXY_y; \
-		maxHH = (maxHH < h[m]) ? h[m] : maxHH; \
-		p[m] = h[m-1]; \
-
 
 
 __global__ void gasal_local_kernel(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, gasal_res_t *device_res, gasal_res_t *device_res_second, uint4 *packed_tb_matrices, int n_tasks, uint32_t max_query_len, short2 *global_inter_row, int stretch, int zdrop, int W)
