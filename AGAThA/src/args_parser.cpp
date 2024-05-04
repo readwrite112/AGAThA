@@ -20,6 +20,9 @@ Parameters::Parameters(int argc_, char **argv_) {
     slice_width = (3);
     z_threshold = (400);
     band_width = (751);
+    kernel_align_num = (8192);
+    kernel_block_num = (256);
+    kernel_thread_num = (256);
 
     isPacked = false;
     isReverseComplement = false;
@@ -40,6 +43,7 @@ Parameters::~Parameters() {
 void Parameters::print() {
     std::cerr <<  "sa=" << sa <<" , sb=" << sb <<" , gapo=" <<  gapo << " , gape="<<gape << std::endl;
     std::cerr <<  "slice_width=" << slice_width << ", z_threshold=" << z_threshold << ", band_width=" << band_width << std::endl;
+    std::cerr <<  "kernel launch: block_num=" << kernel_block_num << ", thread_num=" << kernel_thread_num << ", align_num=" << kernel_align_num << std::endl;
     std::cerr <<  "print_out=" << print_out <<" , n_threads=" <<  n_threads << std::endl;
     std::cerr <<  std::boolalpha << "isPacked = " << isPacked  << std::endl;
     std::cerr <<  "query_batch_fasta_filename=" << query_batch_fasta_filename <<" , target_batch_fasta_filename=" << target_batch_fasta_filename << std::endl;
@@ -65,16 +69,19 @@ void Parameters::failure(fail_type f) {
 }
 
 void Parameters::help() {
-            std::cerr << "Usage: ./test_prog.out [-a] [-b] [-q] [-r] [-s] [-z] [-w] [-p] [-n] <query_batch.fasta> <target_batch.fasta>" << std::endl;
-            std::cerr << "Options: -a INT    match score ["<< sa <<"]" << std::endl;
-            std::cerr << "         -b INT    mismatch penalty [" << sb << "]"<< std::endl;
+            std::cerr << "Usage: ./test_prog.out [-m] [-x] [-q] [-r] [-s] [-z] [-w] [-b] [-t] [-a] [-p] [-n] <query_batch.fasta> <target_batch.fasta>" << std::endl;
+            std::cerr << "Options: -m INT    match score ["<< sa <<"]" << std::endl;
+            std::cerr << "         -x INT    mismatch penalty [" << sb << "]"<< std::endl;
             std::cerr << "         -q INT    gap open penalty [" << gapo << "]" << std::endl;
             std::cerr << "         -r INT    gap extension penalty ["<< gape <<"]" << std::endl;
             std::cerr << "         -s        (AGAThA) slice_width" << std::endl;
             std::cerr << "         -z        (AGAThA) z-drop threshold" << std::endl;
             std::cerr << "         -w        (AGAThA) band width" << std::endl;
+            std::cerr << "         -b        (AGAThA) number of blocks called per kernel" << std::endl;
+            std::cerr << "         -t        (AGAThA) number of threads in a block called per kernel" << std::endl;
+            std::cerr << "         -a        (AGAThA) number of alignments computed per kernel" << std::endl;
             std::cerr << "         -p        print the alignment results" << std::endl;
-            std::cerr << "         -n INT    Number of threads ["<< n_threads<<"]" << std::endl;
+            std::cerr << "         -n INT    Number of CPU threads ["<< n_threads<<"]" << std::endl;
             std::cerr << "         --help, -h : displays this message." << std::endl;
             std::cerr << "Single-pack multi-Parameters (e.g. -sp) is not supported." << std::endl;
             std::cerr << "		  "  << std::endl;
@@ -123,12 +130,12 @@ void Parameters::parse() {
             char param = arg_cur.at(1);
             switch(param)
             {
-                case 'a':
+                case 'm':
                     c++;
                     arg_next = std::string((const char*) (*(argv + c) ) );
                     sa = std::stoi(arg_next);
                 break;
-                case 'b':
+                case 'x':
                     c++;
                     arg_next = std::string((const char*) (*(argv + c) ) );
                     sb = std::stoi(arg_next);
@@ -165,6 +172,21 @@ void Parameters::parse() {
                     c++;
                     arg_next = std::string((const char*) (*(argv + c) ) );
                     band_width = std::stoi(arg_next);
+                break;
+                case 'b':
+                    c++;
+                    arg_next = std::string((const char*) (*(argv + c) ) );
+                    kernel_block_num = std::stoi(arg_next);
+                break;
+                case 't':
+                    c++;
+                    arg_next = std::string((const char*) (*(argv + c) ) );
+                    kernel_thread_num = std::stoi(arg_next);
+                break;
+                case 'a':
+                    c++;
+                    arg_next = std::string((const char*) (*(argv + c) ) );
+                    kernel_align_num = std::stoi(arg_next);
                 break;
 
             }

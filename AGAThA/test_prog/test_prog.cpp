@@ -1,9 +1,6 @@
 
 
 #include "../include/gasal_header.h"
-
-
-
 #include <vector>
 #include <unistd.h>
 #include <math.h>
@@ -12,12 +9,6 @@
 
 
 #define NB_STREAMS 2
-
-//#define STREAM_BATCH_SIZE (262144)
-// this gives each stream HALF of the sequences.
-//#define STREAM_BATCH_SIZE ceil((double)target_seqs.size() / (double)(2))
-
-#define STREAM_BATCH_SIZE 8192//ceil((double)target_seqs.size() / (double)(2 * 2))
 
 
 //#define DEBUG
@@ -207,7 +198,7 @@ int main(int argc, char **argv) {
 		thread_seqs_idx[i] = n_seqs_alloc;
 		if (n_seqs_alloc + thread_batch_size < total_seqs) thread_n_seqs[i] = thread_batch_size;
 		else thread_n_seqs[i] = total_seqs - n_seqs_alloc;
-		thread_n_batchs[i] = (int)ceil((double)thread_n_seqs[i]/(STREAM_BATCH_SIZE));
+		thread_n_batchs[i] = (int)ceil((double)thread_n_seqs[i]/(args->kernel_align_num));
 		n_seqs_alloc += thread_n_seqs[i];
 	}
 	distr_time.Stop();
@@ -243,8 +234,8 @@ int main(int argc, char **argv) {
 		// note: the calculations of the detailed sizes to allocate could be done on the library side (to hide it from the user's perspective)
 		gasal_init_streams(&(gpu_storage_vecs[z]), (maximum_sequence_length_query + 7) , //TODO: remove maximum_sequence_length_query
 						(maximum_sequence_length + 7) ,
-						 STREAM_BATCH_SIZE, //device
-						 args);
+						maximum_sequence_length,
+						args);
 	}
 	#ifdef DEBUG
 		std::cerr << "[TEST_PROG DEBUG]: ";
@@ -278,14 +269,6 @@ int main(int argc, char **argv) {
 
 	}
 
-	// initialize global_inter_row
-	uint32_t BLOCKDIM = 256;//128;
-	uint32_t N_BLOCKS = 256;//(5000 + BLOCKDIM - 1) / BLOCKDIM;
-	/*
-	short2* global_inter_row;
-	cudaMalloc((void**) &global_inter_row, sizeof(short2)*maximum_sequence_length*(BLOCKDIM/32)*N_BLOCKS);	
-	*/
-
 	if (n_seqs > 0) {
 		while (n_batchs_done < thread_n_batchs[omp_get_thread_num()]) { // Loop on streams
 			int gpu_batch_arr_idx = 0;
@@ -297,11 +280,11 @@ int main(int argc, char **argv) {
 			if (seqs_done < n_seqs && gpu_batch_arr_idx < gpu_storage_vecs[omp_get_thread_num()].n) {
 				uint32_t query_batch_idx = 0;
 				uint32_t target_batch_idx = 0;
-				unsigned int j = 0;
+				int j = 0;
 				//-----------Create a batch of sequences to be aligned on the GPU. The batch contains (target_seqs.size() / NB_STREAMS) number of sequences-----------------------
 
 
-				for (int i = curr_idx; seqs_done < n_seqs && j < (STREAM_BATCH_SIZE); i++, j++, seqs_done++)
+				for (int i = curr_idx; seqs_done < n_seqs && j < (args->kernel_align_num); i++, j++, seqs_done++)
 				{
 
 					gpu_batch_arr[gpu_batch_arr_idx].gpu_storage->current_n_alns++ ;
@@ -353,22 +336,16 @@ int main(int argc, char **argv) {
 				uint32_t query_batch_bytes = query_batch_idx;
 				uint32_t target_batch_bytes = target_batch_idx;
 				gpu_batch_arr[gpu_batch_arr_idx].batch_start = curr_idx;
-				curr_idx += (STREAM_BATCH_SIZE);
-				malloc_time.Start();
-				short2* global_inter_row;
-				cudaMalloc((void**) &global_inter_row, sizeof(short2)*(maximum_sequence_length*(BLOCKDIM/8)*N_BLOCKS*3+STREAM_BATCH_SIZE));
-				malloc_time.Stop();
+				curr_idx += (args->kernel_align_num);
 
 				//----------------------------------------------------------------------------------------------------
 				//-----------------calling the GASAL2 non-blocking alignment function---------------------------------
 				local_time.Start();
-				gasal_aln_async(gpu_batch_arr[gpu_batch_arr_idx].gpu_storage, query_batch_bytes, target_batch_bytes, gpu_batch_arr[gpu_batch_arr_idx].n_seqs_batch, args, maximum_sequence_length, global_inter_row);
+				gasal_aln_async(gpu_batch_arr[gpu_batch_arr_idx].gpu_storage, query_batch_bytes, target_batch_bytes, gpu_batch_arr[gpu_batch_arr_idx].n_seqs_batch, args);
 				local_time.Stop();
 				gpu_batch_arr[gpu_batch_arr_idx].gpu_storage->current_n_alns = 0;
 				//---------------------------------------------------------------------------------
-				free_time.Start();
-				cudaFree(global_inter_row);
-				free_time.Stop();
+
 			}
 
 
@@ -398,7 +375,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	//cudaFree(global_inter_row);
 
 	}
 	for (int z = 0; z < n_threads; z++) {

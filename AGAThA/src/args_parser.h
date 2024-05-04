@@ -44,6 +44,9 @@ class Parameters{
         int z_threshold;
         int band_width;
 
+        int32_t kernel_block_num;
+        int32_t kernel_thread_num;
+        int32_t kernel_align_num;
 
         bool isPacked;
         bool isReverseComplement;

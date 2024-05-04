@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <unistd.h>
 
-inline void gasal_kernel_launcher(int32_t N_BLOCKS, int32_t BLOCKDIM, gasal_gpu_storage_t *gpu_storage, int32_t actual_n_alns, uint32_t maximum_sequence_length, short2* global_inter_row)
+inline void gasal_kernel_launcher(int32_t kernel_block_num, int32_t kernel_thread_num, gasal_gpu_storage_t *gpu_storage, int32_t actual_n_alns)
 {
 
 	std::ofstream out;
@@ -15,16 +15,16 @@ inline void gasal_kernel_launcher(int32_t N_BLOCKS, int32_t BLOCKDIM, gasal_gpu_
 	cudaEvent_t begin, end;
 	cudaEventCreate(&begin);
 	cudaEventCreate(&end);
-	cudaFuncSetAttribute(agatha_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (BLOCKDIM/32)*((32*(8*(gpu_storage->slice_width+1)))+28)*sizeof(int32_t));
+	cudaFuncSetAttribute(agatha_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (kernel_thread_num/32)*((32*(8*(gpu_storage->slice_width+1)))+28)*sizeof(int32_t));
 	short2* idx;
 	cudaHostAlloc((void**)&idx, sizeof(int32_t)*actual_n_alns, cudaHostAllocDefault);
 	cudaEventRecord(begin);
-	agatha_sort<<<N_BLOCKS, BLOCKDIM, 0, gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, actual_n_alns, maximum_sequence_length, global_inter_row); 
-	cudaMemcpyAsync((void*)idx, (const void*)(global_inter_row+N_BLOCKS*(BLOCKDIM/8)*maximum_sequence_length*3), actual_n_alns * sizeof(uint32_t), cudaMemcpyDeviceToHost, gpu_storage->str);
+	agatha_sort<<<kernel_block_num, kernel_thread_num, 0, gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, actual_n_alns, gpu_storage->maximum_sequence_length, gpu_storage->global_buffer); 
+	cudaMemcpyAsync((void*)idx, (const void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), actual_n_alns * sizeof(uint32_t), cudaMemcpyDeviceToHost, gpu_storage->str);
 	cudaStreamSynchronize(gpu_storage->str);
 	std::sort(idx, idx+actual_n_alns, [](short2 a, short2 b){ return a.x<b.x;});
-	cudaMemcpyAsync((void*)(global_inter_row+N_BLOCKS*(BLOCKDIM/8)*maximum_sequence_length*3), (const void*)idx, actual_n_alns * sizeof(uint32_t), cudaMemcpyHostToDevice, gpu_storage->str);
-	agatha_kernel<<<N_BLOCKS, BLOCKDIM, (BLOCKDIM/32)*((32*(8*(gpu_storage->slice_width+1)))+28)*sizeof(int32_t), gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, gpu_storage->device_res, gpu_storage->device_res_second, gpu_storage->packed_tb_matrices, actual_n_alns, maximum_sequence_length, global_inter_row); 
+	cudaMemcpyAsync((void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), (const void*)idx, actual_n_alns * sizeof(uint32_t), cudaMemcpyHostToDevice, gpu_storage->str);
+	agatha_kernel<<<kernel_block_num, kernel_thread_num, (kernel_thread_num/32)*((32*(8*(gpu_storage->slice_width+1)))+28)*sizeof(int32_t), gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, gpu_storage->device_res, gpu_storage->device_res_second, gpu_storage->packed_tb_matrices, actual_n_alns, gpu_storage->maximum_sequence_length, gpu_storage->global_buffer); 
 	cudaDeviceSynchronize();
 	cudaEventRecord(end);
 	cudaEventSynchronize(end);
@@ -41,7 +41,10 @@ inline void gasal_kernel_launcher(int32_t N_BLOCKS, int32_t BLOCKDIM, gasal_gpu_
 
 
 //GASAL2 asynchronous (a.k.a non-blocking) alignment function
-void gasal_aln_async(gasal_gpu_storage_t *gpu_storage, const uint32_t actual_query_batch_bytes, const uint32_t actual_target_batch_bytes, const uint32_t actual_n_alns, Parameters *params, uint32_t maximum_sequence_length, short2* global_inter_row) {
+void gasal_aln_async(gasal_gpu_storage_t *gpu_storage, const uint32_t actual_query_batch_bytes, const uint32_t actual_target_batch_bytes, const uint32_t actual_n_alns, Parameters *params) {
+	
+	int32_t kernel_block_num = params->kernel_block_num;
+	int32_t kernel_thread_num = params->kernel_thread_num;
 
 	cudaError_t err;
 	if (actual_n_alns <= 0) {
@@ -177,13 +180,9 @@ void gasal_aln_async(gasal_gpu_storage_t *gpu_storage, const uint32_t actual_que
 	}
 
 	//-----------------------------------------------------------------------------------------------------------
-	// TODO: Adjust the block size depending on the kernel execution.
-	
-    uint32_t BLOCKDIM = 256;//128;
-    uint32_t N_BLOCKS = 256;//(actual_n_alns + BLOCKDIM - 1) / BLOCKDIM;
 
-    int query_batch_tasks_per_thread = (int)ceil((double)actual_query_batch_bytes/(8*BLOCKDIM*N_BLOCKS));
-    int target_batch_tasks_per_thread = (int)ceil((double)actual_target_batch_bytes/(8*BLOCKDIM*N_BLOCKS));
+    int query_batch_tasks_per_thread = (int)ceil((double)actual_query_batch_bytes/(8*kernel_thread_num*kernel_block_num));
+    int target_batch_tasks_per_thread = (int)ceil((double)actual_target_batch_bytes/(8*kernel_thread_num*kernel_block_num));
 
 
     //-------------------------------------------launch packing kernel
@@ -191,7 +190,7 @@ void gasal_aln_async(gasal_gpu_storage_t *gpu_storage, const uint32_t actual_que
 
 	if (!(params->isPacked))
 	{
-		gasal_pack_kernel<<<N_BLOCKS, BLOCKDIM, 0, gpu_storage->str>>>((uint32_t*)(gpu_storage->unpacked_query_batch),
+		gasal_pack_kernel<<<kernel_block_num, kernel_thread_num, 0, gpu_storage->str>>>((uint32_t*)(gpu_storage->unpacked_query_batch),
 		(uint32_t*)(gpu_storage->unpacked_target_batch), gpu_storage->packed_query_batch, gpu_storage->packed_target_batch,
 		query_batch_tasks_per_thread, target_batch_tasks_per_thread, actual_query_batch_bytes/4, actual_target_batch_bytes/4);
 		cudaError_t pack_kernel_err = cudaGetLastError();
@@ -219,7 +218,7 @@ void gasal_aln_async(gasal_gpu_storage_t *gpu_storage, const uint32_t actual_que
 		CHECKCUDAERROR(cudaMemcpyAsync(gpu_storage->query_op, gpu_storage->host_query_op, actual_n_alns * sizeof(uint8_t), cudaMemcpyHostToDevice,  gpu_storage->str));
 		CHECKCUDAERROR(cudaMemcpyAsync(gpu_storage->target_op, gpu_storage->host_target_op, actual_n_alns * sizeof(uint8_t), cudaMemcpyHostToDevice,  gpu_storage->str));	
 		//--------------------------------------launch reverse-complement kernel------------------------------------------------------
-		gasal_reversecomplement_kernel<<<N_BLOCKS, BLOCKDIM, 0, gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens,
+		gasal_reversecomplement_kernel<<<kernel_block_num, kernel_thread_num, 0, gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens,
 			gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, gpu_storage->query_op, gpu_storage->target_op, actual_n_alns);
 		cudaError_t reversecomplement_kernel_err = cudaGetLastError();
 		if ( cudaSuccess != reversecomplement_kernel_err )
@@ -232,7 +231,7 @@ void gasal_aln_async(gasal_gpu_storage_t *gpu_storage, const uint32_t actual_que
 	
     //--------------------------------------launch alignment kernels--------------------------------------------------------------
 	
-	gasal_kernel_launcher(N_BLOCKS, BLOCKDIM, gpu_storage, actual_n_alns, maximum_sequence_length, global_inter_row);
+	gasal_kernel_launcher(params->kernel_block_num, params->kernel_thread_num, gpu_storage, actual_n_alns);
 	
 	
 

@@ -143,6 +143,8 @@ typedef struct {
 
 	//for AGAThA
 	int32_t slice_width;
+	uint32_t maximum_sequence_length;
+	short2 *global_buffer;
 
 
 	cudaStream_t str;

@@ -47,7 +47,7 @@
 
 
 
-__global__ void agatha_kernel(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, gasal_res_t *device_res, gasal_res_t *device_res_second, uint4 *packed_tb_matrices, int n_tasks, uint32_t max_query_len, short2 *global_inter_row)
+__global__ void agatha_kernel(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, gasal_res_t *device_res, gasal_res_t *device_res_second, uint4 *packed_tb_matrices, int n_tasks, uint32_t max_query_len, short2 *global_buffer)
 {
     const uint32_t tid = (blockIdx.x * blockDim.x) + threadIdx.x;//thread ID
 
@@ -101,9 +101,9 @@ __global__ void agatha_kernel(uint32_t *packed_query_batch, uint32_t *packed_tar
 	int band_target, band_query;
 	int total_diags;
 	register uint32_t gpac, rpac; 
-	short2* global_inter_col = (short2*)(global_inter_row+max_query_len*(blockDim.x/8)*gridDim.x);
+	short2* global_inter_col = (short2*)(global_buffer+max_query_len*(blockDim.x/8)*gridDim.x);
 	int32_t* global_inter_col_p= (int32_t*)(global_inter_col+max_query_len*(blockDim.x/8)*gridDim.x);
-	short2* global_idx = (short2*)(global_inter_row+max_query_len*(blockDim.x/8)*gridDim.x*3);
+	short2* global_idx = (short2*)(global_buffer+max_query_len*(blockDim.x/8)*gridDim.x*3);
 
 	const int total_shm = packed_len*(_cudaSliceWidth+1); 
 	bool active, zdropped;
@@ -132,7 +132,7 @@ __global__ void agatha_kernel(uint32_t *packed_query_batch, uint32_t *packed_tar
 			l = j*warp_len + warp_id;
 			if ((l) < max_query_len) {
 				k = -(_cudaGapOE + (_cudaGapExtend*(l)));
-				global_inter_row[warp_num*max_query_len + l] =  l <= _cudaBandWidth? make_short2(k, k-_cudaGapOE):initHD;	
+				global_buffer[warp_num*max_query_len + l] =  l <= _cudaBandWidth? make_short2(k, k-_cudaGapOE):initHD;	
 			}
 		}
 		for (j = 0; j < job_per_query; j++) {
@@ -236,7 +236,7 @@ __global__ void agatha_kernel(uint32_t *packed_query_batch, uint32_t *packed_tar
 						for (k = 28; k >= 0 && ridx < read_len; k -= 4) {
 							uint32_t rbase = (rpac >> k) & 15;	//get a base from query_batch sequence
 							//-----load intermediate values--------------
-							HD = global_inter_row[warp_num*max_query_len + ridx];
+							HD = global_buffer[warp_num*max_query_len + ridx];
 							h[0] = HD.x;
 							e = HD.y;
 							
@@ -255,7 +255,7 @@ __global__ void agatha_kernel(uint32_t *packed_query_batch, uint32_t *packed_tar
 							//----------save intermediate values------------
 							HD.x = h[m-1];
 							HD.y = e;
-							global_inter_row[warp_num*max_query_len + ridx] = HD;
+							global_buffer[warp_num*max_query_len + ridx] = HD;
 							//---------------------------------------------
 
 							ridx++;
@@ -427,14 +427,14 @@ __global__ void agatha_kernel(uint32_t *packed_query_batch, uint32_t *packed_tar
 }
 
 
-__global__ void agatha_sort(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, int n_tasks, uint32_t max_query_len, short2 *global_inter_row)
+__global__ void agatha_sort(uint32_t *packed_query_batch, uint32_t *packed_target_batch,  uint32_t *query_batch_lens, uint32_t *target_batch_lens, uint32_t *query_batch_offsets, uint32_t *target_batch_offsets, int n_tasks, uint32_t max_query_len, short2 *global_buffer)
 {
 
     const uint32_t tid = (blockIdx.x * blockDim.x) + threadIdx.x;//thread ID
 
 	uint32_t read_len, ref_len, query_batch_regs, target_batch_regs;
 
-	short2* global_idx = (short2*)(global_inter_row+max_query_len*(blockDim.x/8)*gridDim.x*3);
+	short2* global_idx = (short2*)(global_buffer+max_query_len*(blockDim.x/8)*gridDim.x*3);
 
 	if (tid < n_tasks) {
 
