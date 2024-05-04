@@ -72,6 +72,6 @@ maxHH = (maxHH < curr) ? curr : maxHH;
 
 #include "kernels/pack_rc_seqs.h"
 
-#include "kernels/local_kernel_template.h"
+#include "kernels/agatha_kernel.h"
 
 #endif
