@@ -224,6 +224,6 @@ void Parameters::fileopen() {
         failure(WRONG_FILES);
 
     if (print_out) {
-        raw_file.open(raw_filename);
+        raw_file.open(raw_filename, std::ios::app);
     }
 }
