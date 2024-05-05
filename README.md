@@ -29,7 +29,6 @@ cd ..
 ## AGAThA Details
 
 AGAThA was built on top of [GASAL2](https://github.com/nahmedraja/GASAL2).
-The main kernel can be found in ```AGAThA/src/kernels/agatha_kernl.h```.
 
 ### 1. AGAThA Options
 Using ```AGAThA.sh```, we can use the following options for AGAThA.
