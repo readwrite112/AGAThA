@@ -10,19 +10,14 @@
 inline void agatha_kernel_launcher(int32_t kernel_block_num, int32_t kernel_thread_num, gasal_gpu_storage_t *gpu_storage, int32_t actual_n_alns)
 {
 
-
-	short2* idx;
-	cudaHostAlloc((void**)&idx, sizeof(int32_t)*actual_n_alns, cudaHostAllocDefault);
-
 	agatha_sort<<<kernel_block_num, kernel_thread_num, 0, gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, actual_n_alns, gpu_storage->maximum_sequence_length, gpu_storage->global_buffer); 
-	cudaMemcpyAsync((void*)idx, (const void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), actual_n_alns * sizeof(uint32_t), cudaMemcpyDeviceToHost, gpu_storage->str);
+	cudaMemcpyAsync((void*)(gpu_storage->host_buffer), (const void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), actual_n_alns * sizeof(uint32_t), cudaMemcpyDeviceToHost, gpu_storage->str);
 	cudaStreamSynchronize(gpu_storage->str);
-	std::sort(idx, idx+actual_n_alns, [](short2 a, short2 b){ return a.x<b.x;});
-	cudaMemcpyAsync((void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), (const void*)idx, actual_n_alns * sizeof(uint32_t), cudaMemcpyHostToDevice, gpu_storage->str);
+	std::sort(gpu_storage->host_buffer, gpu_storage->host_buffer+actual_n_alns, [](short2 a, short2 b){ return a.x<b.x;});
+	cudaMemcpyAsync((void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), (const void*)(gpu_storage->host_buffer), actual_n_alns * sizeof(uint32_t), cudaMemcpyHostToDevice, gpu_storage->str);
 	
 	agatha_kernel<<<kernel_block_num, kernel_thread_num, (kernel_thread_num/32)*((32*(8*(gpu_storage->slice_width+1)))+28)*sizeof(int32_t), gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, gpu_storage->device_res, gpu_storage->device_res_second, gpu_storage->packed_tb_matrices, actual_n_alns, gpu_storage->maximum_sequence_length, gpu_storage->global_buffer); 
-	
-	cudaFreeHost(idx);
+
 
 }
 

@@ -145,6 +145,7 @@ typedef struct {
 	int32_t slice_width;
 	uint32_t maximum_sequence_length;
 	short2 *global_buffer;
+	short2 *host_buffer;
 
 
 	cudaStream_t str;

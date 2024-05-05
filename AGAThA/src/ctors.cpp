@@ -87,6 +87,7 @@ void gasal_init_streams(gasal_gpu_storage_v *gpu_storage_vec,  int max_query_len
 
 		// For AGAThA
 		CHECKCUDAERROR(cudaMalloc(&(gpu_storage_vec->a[i].global_buffer), sizeof(short2)*(maximum_sequence_length*(params->kernel_thread_num/8)*(params->kernel_block_num)*3+(params->kernel_align_num))));
+		CHECKCUDAERROR(cudaHostAlloc(&(gpu_storage_vec->a[i].host_buffer), sizeof(int32_t)*max_n_alns, cudaHostAllocDefault));
 
 		gpu_storage_vec->a[i].host_res = gasal_res_new_host(host_max_n_alns, params);
 		gpu_storage_vec->a[i].device_cpy = gasal_res_new_device_cpy(max_n_alns,  params);
@@ -141,6 +142,7 @@ void gasal_destroy_streams(gasal_gpu_storage_v *gpu_storage_vec, Parameters *par
 
 		// For AGAThA
 		if (gpu_storage_vec->a[i].global_buffer != NULL) CHECKCUDAERROR(cudaFree(gpu_storage_vec->a[i].global_buffer));
+		if (gpu_storage_vec->a[i].host_buffer	!= NULL) CHECKCUDAERROR(cudaFreeHost(gpu_storage_vec->a[i].host_buffer));
 
 		if (gpu_storage_vec->a[i].unpacked_query_batch != NULL) CHECKCUDAERROR(cudaFree(gpu_storage_vec->a[i].unpacked_query_batch));
 		if (gpu_storage_vec->a[i].unpacked_target_batch != NULL) CHECKCUDAERROR(cudaFree(gpu_storage_vec->a[i].unpacked_target_batch));
