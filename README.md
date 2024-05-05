@@ -5,8 +5,6 @@
 
 It is strongly recommended to **revisit this repository after a new release is made**. 
 
-(Updated 2024.05.05)
-
 ## Getting Started
 
 ### 1. Environment Setup with Docker
