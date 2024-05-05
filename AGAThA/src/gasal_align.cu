@@ -10,6 +10,7 @@
 inline void agatha_kernel_launcher(int32_t kernel_block_num, int32_t kernel_thread_num, gasal_gpu_storage_t *gpu_storage, int32_t actual_n_alns)
 {
 
+	/*Sort for Uneven Bucketing*/
 	agatha_sort<<<kernel_block_num, kernel_thread_num, 0, gpu_storage->str>>>(gpu_storage->packed_query_batch, gpu_storage->packed_target_batch, gpu_storage->query_batch_lens, gpu_storage->target_batch_lens, gpu_storage->query_batch_offsets, gpu_storage->target_batch_offsets, actual_n_alns, gpu_storage->maximum_sequence_length, gpu_storage->global_buffer); 
 	cudaMemcpyAsync((void*)(gpu_storage->host_buffer), (const void*)(gpu_storage->global_buffer+kernel_block_num*(kernel_thread_num/8)*(gpu_storage->maximum_sequence_length)*3), actual_n_alns * sizeof(uint32_t), cudaMemcpyDeviceToHost, gpu_storage->str);
 	cudaStreamSynchronize(gpu_storage->str);
